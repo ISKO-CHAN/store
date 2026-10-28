@@ -1,0 +1,30 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Админка — НоутМаркет</title>
+<style>body{font:14px system-ui,sans-serif;margin:0;background:#f4f5fa;color:#161a2b}header{background:#1b1f33;color:#fff;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header b{font-size:16px}
+button{cursor:pointer;padding:7px 12px;border:0;border-radius:8px;background:#5b5bff;color:#fff;font:inherit}button.g{background:#e3e6f2;color:#161a2b}button.r{background:#d92d20}
+main{padding:16px;overflow-x:auto}table{border-collapse:collapse;background:#fff;width:100%;min-width:900px}td,th{padding:6px 8px;border-bottom:1px solid #e3e6f2;text-align:left;vertical-align:top}
+input,select{padding:6px;border:1px solid #ccd;border-radius:6px;font:inherit;width:100%}input.n{width:90px}#msg{margin-left:auto;font-weight:600}.add{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;background:#fff;padding:12px;border-radius:10px}</style></head><body>
+<header><b>НоутМаркет · админка</b><button class="g" id="t1">Товары</button><button class="g" id="t2">Заказы</button><button class="g" id="t3">Статистика</button><button class="g" id="t4">Копия БД</button><span id="msg"></span></header><main id="m"></main>
+<script>
+let pw=sessionStorage.pw||'';const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+async function api(p,m='GET',b){const r=await fetch('/api/admin/'+p,{method:m,headers:{'X-Admin':pw,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const j=await r.json();
+  if(r.status===401){pw=prompt('Пароль администратора')||'';sessionStorage.pw=pw;return api(p,m,b)}if(!r.ok)throw new Error(j.error||r.status);return j}
+const say=(t,ok=1)=>{const e=$('#msg');e.textContent=t;e.style.color=ok?'#7CFC9A':'#ff8a80';setTimeout(()=>e.textContent='',4000)};
+const F=['brand','cat','name','cpu','ram','ssd','scr','gpu','price','qty'];
+async function products(){const d=await api('products'),st=d.stores;
+  $('#m').innerHTML='<table><tr><th>ID</th><th>Бренд</th><th>Модель</th><th>Цена, сом</th>'+st.map(s=>`<th>${esc(s.name)}</th>`).join('')+'<th>Фото (URL)</th><th></th></tr>'+
+  d.products.map(p=>`<tr data-id="${p.id}"><td>${p.id}</td><td>${esc(p.brand)}</td><td>${esc(p.name)}</td><td><input class="n" data-f="price" value="${p.price}"></td>`+
+  st.map(s=>`<td><input class="n" data-s="${s.id}" value="${p.stock[s.id]||0}"></td>`).join('')+`<td><input data-f="photo" value="${esc(p.photo)}" placeholder="/img/model.jpg"></td><td><button data-save>Сохранить</button> <button class="r" data-del>✕</button></td></tr>`).join('')+
+  '</table><h3>Новый товар</h3><div class="add">'+F.map(f=>`<input id="n_${f}" placeholder="${f}">`).join('')+'<button id="addb">Добавить</button></div>'}
+async function orders(){const d=await api('orders');window._o=d;
+  $('#m').innerHTML='<table><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Состав</th><th>Сумма</th><th>Статус</th></tr>'+d.map(o=>`<tr data-o="${o.id}"><td>${o.id}</td><td>${esc(o.created_at)}</td><td>${esc(o.full_name)}<br>${esc(o.phone)}</td><td>${o.items.map(i=>esc(i.name)+' ×'+i.qty).join('<br>')}</td><td>${o.total_kgs.toLocaleString('ru-RU')} сом</td><td><select data-st>${['new','paid','shipped','done','cancelled'].map(s=>`<option ${s==o.status?'selected':''}>${s}</option>`).join('')}</select></td></tr>`).join('')+'</table><p><button id="exp">Скачать заказы в CSV (Excel/Access)</button></p>'}
+async function stats(){const d=await api('stats'),n=x=>x.toLocaleString('ru-RU');$('#m').innerHTML=`<h3>Выручка: ${n(d.revenue)} сом</h3><p>${d.orders.map(o=>esc(o.status)+': '+o.n+' ('+n(o.s)+' сом)').join(' · ')||'Заказов нет'}</p><h3>Топ товаров</h3><ol>${d.top.map(x=>`<li>${esc(x.name)} — ${x.q} шт.</li>`).join('')||'<li>Нет продаж</li>'}</ol><h3>Заканчивается</h3><ul>${d.low.map(x=>`<li>${esc(x.name)} — ${x.in_stock} шт.</li>`).join('')}</ul>`}
+const run=async f=>{try{await f();say('Готово')}catch(e){say(e.message,0)}};
+$('#t1').onclick=()=>run(products);$('#t2').onclick=()=>run(orders);$('#t3').onclick=()=>run(stats);$('#t4').onclick=()=>run(async()=>{const r=await api('backup','POST');say('Копия: '+r.file)});
+$('#m').addEventListener('click',e=>{const t=e.target,tr=t.closest('tr');
+  if(t.dataset.save!==undefined)run(async()=>{const b={price:+tr.querySelector('[data-f=price]').value,photo:tr.querySelector('[data-f=photo]').value.trim(),stock:{}};tr.querySelectorAll('[data-s]').forEach(i=>b.stock[i.dataset.s]=+i.value);await api('products/'+tr.dataset.id,'PUT',b)});
+  if(t.dataset.del!==undefined&&confirm('Удалить товар?'))run(async()=>{await api('products/'+tr.dataset.id,'DELETE');await products()});
+  if(t.id==='exp'){const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"',s=['id;date;client;phone;status;total;items',...window._o.map(o=>[o.id,o.created_at,o.full_name,o.phone,o.status,o.total_kgs,o.items.map(i=>i.name+' x'+i.qty).join(', ')].map(q).join(';'))].join('\r\n'),l=document.createElement('a');l.href=URL.createObjectURL(new Blob(['\ufeff'+s],{type:'text/csv'}));l.download='orders.csv';l.click()}
+  if(t.id==='addb')run(async()=>{const b={};F.forEach(f=>b[f]=$('#n_'+f).value.trim());await api('products','POST',b);await products()})});
+$('#m').addEventListener('change',e=>{if(e.target.dataset.st!==undefined)run(()=>api('orders/'+e.target.closest('tr').dataset.o+'/status','POST',{status:e.target.value}))});
+run(products);
+</script></body></html>
